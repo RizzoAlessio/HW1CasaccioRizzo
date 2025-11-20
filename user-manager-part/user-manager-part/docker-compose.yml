@@ -1,0 +1,39 @@
+services:
+  user-db:
+    image: mysql:8
+    container_name: "U-database"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: users_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    volumes:
+      - userdb_data:/var/lib/mysql
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "3307:3306"   # avoid conflicts with Windows MySQL
+    networks:
+      - user-net      # <-- same network
+
+  user-manager:
+    build: ./user-manager
+    container_name: "U-manager"
+    environment:
+      DB_HOST: user-db          # <-- CORRECT
+      DB_NAME: users_db
+      DB_USER: user
+      DB_PASS: password
+      LISTEN_PORT: 5002
+    depends_on:
+      user-db:
+        condition: service_started
+    ports:
+      - "5002:5002"
+    networks:
+      - user-net      # <-- same network
+
+volumes:
+  userdb_data:
+
+networks:
+  user-net:

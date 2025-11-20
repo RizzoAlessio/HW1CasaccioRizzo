@@ -1,0 +1,31 @@
+services:
+  user_manag:
+    build: .
+    container_name: user_manager
+    ports:
+      - "5000:5000"
+    environment:
+      MYSQL_HOST: user_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: userdatabase
+    depends_on:
+      - user_db
+
+  user_db:
+    image: mysql:8
+    container_name: user_database
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: userdatabase
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./tab.sql:/docker-entrypoint-initdb.d/tab.sql
+      - mysqldata:/var/lib/mysql
+
+volumes:
+  mysqldata:
