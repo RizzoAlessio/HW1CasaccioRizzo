@@ -1,2 +1,0 @@
-# HW1CasaccioRizzo
-
