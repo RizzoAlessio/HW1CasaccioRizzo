@@ -1,1 +1,2 @@
 aaa
+aggiungere il gRPC tra DataCollector e UserManager, per poi modificare il DataCollector di consequenza
