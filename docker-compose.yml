@@ -1,0 +1,91 @@
+services:
+
+  data_collector:
+    build: ./DataCollector
+    container_name: data_collector
+    depends_on:
+      - data_db
+      - user_manag
+    environment:
+      DB_HOST: data_db
+      DB_USER: user
+      DB_PASS: pass
+      DB_NAME: datadatabase 
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./proto:/proto
+    networks:
+      - app_data_network
+      - app_network
+
+  data_db:
+    image: mysql:8
+    container_name: data_database
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_USER: user
+      MYSQL_PASSWORD: pass
+      MYSQL_DATABASE: datadatabase
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./tabd.sql:/docker-entrypoint-initdb.d/tabd.sql
+      - mysqldata2:/var/lib/mysql
+    networks:
+      - app_data_network
+
+  user_manag:
+    build: ./UserManager
+    container_name: user_manager
+    ports:
+      - "5000:5000"
+    environment:
+      MYSQL_HOST: user_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: userdatabase
+    volumes:
+      - ./proto:/proto
+    depends_on:
+      - user_db
+    networks:
+      - app_network
+
+  user_db:
+    image: mysql:8
+    container_name: user_database
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: userdatabase
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./tabu.sql:/docker-entrypoint-initdb.d/tabu.sql
+      - mysqldata:/var/lib/mysql
+    networks:
+      - app_network
+
+  user_grpc:
+    build: ./UserManager
+    container_name: user_grpc
+    command: python grpc_server.py
+    environment:
+      MYSQL_HOST: user_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: userdatabase
+    networks:
+      - app_network
+    depends_on:
+      - user_db
+
+volumes:
+  mysqldata:
+  mysqldata2:
+
+networks:
+  app_network:
+  app_data_network:
