@@ -1,5 +1,0 @@
-flask
-pymysql
-cryptography
-mysqlclient
-flask_mysqldb
