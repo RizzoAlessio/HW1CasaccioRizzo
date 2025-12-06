@@ -10,7 +10,9 @@ services:
       DB_HOST: data_db
       DB_USER: user
       DB_PASS: pass
-      DB_NAME: datadatabase 
+      DB_NAME: datadatabase
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      KAFKA_TOPIC_ALERT_SYSTEM: "to-alert-system"
     ports:
       - "5001:5001"
     volumes:

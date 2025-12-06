@@ -62,7 +62,6 @@ def delete_user():
     data = request.get_json()
     if not data or "email" not in data:
         return jsonify({"errore": "parametri non presenti"}), 404
-    
     email = data["email"]
     try:
         db = get_connection()

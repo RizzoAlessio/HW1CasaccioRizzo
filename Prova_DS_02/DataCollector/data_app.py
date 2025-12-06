@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-import requests, os, time, json
+import requests, os, time, json, logging
 import mysql.connector
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
@@ -20,7 +20,7 @@ def get_conn():
 
 def add_pref(user, icao):
     if user == "" or not icao:
-        return jsonify({"errore": "parametri non trovati"}), 404
+        return jsonify({"Errore": "Parametri non trovati"}), 404
     try:
         db = get_conn()
         cursor = db.cursor(dictionary=True)
@@ -30,11 +30,47 @@ def add_pref(user, icao):
             cursor.execute("INSERT INTO pref (email, icao) VALUES (%s, %s)", (user, icao))
             db.commit()
     except mysql.connector.Error as e:
-        return jsonify({"errore di MySQL in pref": str(e)}), 500
+        return jsonify({"Errore di MySQL in pref": str(e)}), 500
     finally:
         cursor.close()
         db.close()
     return None
+
+def get_token(auth):
+    url = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+    params = {"grant_type": "client_credentials", "client_id": auth[0], "client_secret": auth[1]}
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    resp = requests.post(url, data=params, headers=headers)
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+def check_pref(icao, user):
+    db = get_conn()
+    cursor = db.cursor()
+    cursor.execute("SELECT id FROM pref WHERE email=%s AND icao=%s", (user, icao))
+    pref = cursor.fetchone()
+    cursor.close()
+    db.close()
+    return pref
+
+def fetch_flights(icao, begin, end, type):
+    cred = json.load(open("credentals.json"))
+    OPENSKY_USER = cred.get("clientId")
+    OPENSKY_SECR = cred.get("clientSecret")
+    auth = (OPENSKY_USER, OPENSKY_SECR)
+    token = get_token(auth)
+    url = f"https://opensky-network.org/api/flights/{type}?airport={icao}&begin={begin}&end={end}"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        resp = circuit_breaker.call(requests.get, url, headers=headers, timeout=10)
+    except CircuitBreakerOpenException or requests.exceptions.RequestException:
+        return None     
+    finally:
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 404:
+            return []
+        return None
 
 def periodic():
     try:
@@ -47,7 +83,6 @@ def periodic():
         now = int(time.time())
         begin = now - 12*3600
         end = now
-
         for r in rows:
             icao = r["icao"]
             data = fetch_flights(icao, begin, end, "departure")
@@ -105,45 +140,6 @@ def add_airport():
         db.close()
     return jsonify({"OK": 200, "Aeroporto registrato": icao,})
 
-def get_token(auth):
-    url = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
-    params = {"grant_type": "client_credentials", "client_id": auth[0], "client_secret": auth[1]}
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    resp = requests.post(url, data=params, headers=headers)
-    resp.raise_for_status()
-    return resp.json()["access_token"]
-
-def check_pref(icao, user):
-    db = get_conn()
-    cursor = db.cursor()
-    cursor.execute("SELECT id FROM pref WHERE email=%s AND icao=%s", (user, icao))
-    pref = cursor.fetchone()
-    cursor.close()
-    db.close()
-    return pref
-
-def fetch_flights(icao, begin, end, type):
-    cred = json.load(open("credentals.json"))
-    OPENSKY_USER = cred.get("clientId")
-    OPENSKY_SECR = cred.get("clientSecret")
-    auth = (OPENSKY_USER, OPENSKY_SECR)
-    token = get_token(auth)
-    url = f"https://opensky-network.org/api/flights/{type}?airport={icao}&begin={begin}&end={end}"
-    headers = {"Authorization": f"Bearer {token}"}
-    #da rivedere
-    try:
-        resp = circuit_breaker.call(requests.get, url, headers=headers, timeout=10)
-    except CircuitBreakerOpenException:
-        return None     
-    except requests.exceptions.RequestException as e:
-        return None     
-    else:
-        if resp.status_code == 200:
-            return resp.json()
-        if resp.status_code == 404:
-            return []
-    return None
-
 @app.route("/airports/<icao>/<type>", methods=["GET"])
 def add_flight(icao, type):
     if user == "":
@@ -172,6 +168,7 @@ def add_flight(icao, type):
             cursor = db.cursor()
             cursor.execute("INSERT INTO voli (icao24, estDep, estArr, departureDate, arrivalDate) VALUES (%s, %s, %s, %s, %s)", (icaoA, estDep, estArr, departureDate, arrivalDate))
             add_pref(user, icao)
+            n += 1
             db.commit()
         except mysql.connector.IntegrityError:
             return jsonify({"errore": "Probabilmente già inserito"}), 409
@@ -180,7 +177,6 @@ def add_flight(icao, type):
         finally:
             cursor.close()
             db.close()
-            n += 1
     return ({"OK": user, "abbiamo registrato tot aerei": n})
 
 @app.route("/airports/<icao>/7average")
@@ -198,7 +194,6 @@ def avg_flights(icao):
         day = (datetime.now().date() - timedelta(days = i)).isoformat()
         daily.append({"day": day, "conto": cday.get(day, 0)})
     avg = sum(item["conto"] for item in daily) / days
-    
     return jsonify({"icao": icao, "media": avg, "conteggio": daily})
 
 scheduler = BackgroundScheduler()
