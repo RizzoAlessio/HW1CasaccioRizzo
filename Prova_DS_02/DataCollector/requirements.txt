@@ -1,0 +1,7 @@
+flask
+requests
+mysql-connector-python
+apscheduler
+grpcio
+grpcio-tools
+kafka-python
