@@ -4,3 +4,4 @@ mysql-connector-python
 apscheduler
 grpcio
 grpcio-tools
+confluent-kafka

@@ -3,9 +3,9 @@ import requests, os, time, json, logging
 import mysql.connector
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
-from grpc_client import check_user
+from grpc_client import check_user, check_lh
 from breaker import CircuitBreaker, CircuitBreakerOpenException
-from confluent_kafka import Producer, KafkaException
+from kafka import KafkaProducer, errors
 
 app = Flask(__name__)
 user_data = [""]
@@ -15,12 +15,6 @@ logging.basicConfig(level=logging.INFO)
 K_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 K_TOPIC = os.getenv("KAFKA_TOPIC_ALERT_SYSTEM", "to-alert-system")
 
-producer_config = {
-        'bootstrap.servers': K_SERVERS,
-        'acks': 'all',
-        'linger.ms': 10,
-        'retries': 3
-    }
 producer = None
 
 def get_conn():
@@ -31,16 +25,10 @@ def get_conn():
         database=os.getenv("DB_NAME"),
     )
 
-def report(err, msg):
-    if err is not None:
-        logging.error(f"Errore nella consegna: {err}")
-    else:
-        logging.info(f"Messaggio consegnato a {msg.topic()}")
-
 def send_kafka(icao, departure_count):
     global producer, user_data
     if producer is None:
-        logging.error("Producer Kafka non inizializzato per qualche motivo...")
+        logging.error("Producer Kafka non inizializzato")
         return
 
     event = {
@@ -54,27 +42,27 @@ def send_kafka(icao, departure_count):
     }
 
     try:
-        producer.produce(
-            K_TOPIC,
-            json.dumps(event).encode("utf-8"),
-            callback=report
-        )
-        producer.poll(0)
+        producer.send(K_TOPIC, value=event)
         producer.flush()
+        logging.info(f"[KAFKA] Evento inviato → {icao}")
     except Exception as e:
-        logging.error(f"Errore nel send_kafka {e}")
+        logging.error(f"[KAFKA] Errore nell'inviare il messaggio: {e}")
 
-def add_pref(user, icao, l, h):
+def add_pref(user, icao):
     global user_data
     if user == "" or not icao:
         return jsonify({"errore": "parametri non trovati"}), 404
+    res = check_lh(user) or {"low": None, "high": None}
+    user_data.append(res.get("low"))
+    user_data.append(res.get("high"))
+
     try:
         db = get_conn()
         cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT id FROM pref WHERE email=%s AND icao=%s", (user, icao))
         pref = cursor.fetchone()
         if pref is None:
-            cursor.execute("INSERT INTO pref (email, icao, l, h) VALUES (%s, %s, %s, %s)", (user, icao, l, h))
+            cursor.execute("INSERT INTO pref (email, icao, l, h) VALUES (%s, %s, %s, %s)", (user, icao, user_data[1], user_data[2]))
             db.commit()
     except mysql.connector.Error as e:
         return jsonify({"errore di MySQL in pref": str(e)}), 500
@@ -118,6 +106,43 @@ def periodic():
         cursor.close()
         db.close()
 
+@app.route("/<mail>", methods=["POST"])
+def verify_user(mail):
+    global user_data
+    ref = check_user(mail)
+    if ref['exists'] == False:
+        return jsonify({"errore": "utente non registrato"}), 401
+    if user_data[0] == mail:
+        return jsonify({"errore": "utente già registrato, proseguire"}), 202
+    #if user_data[0] != "" and user_data[0] != mail:
+        #return jsonify({"errore": "utente prima di lei stà usando il sistema"}), 202
+    user_data[0] = mail
+    return jsonify({"OK": 200, "è effettivamente registrato": user_data[0]})
+
+@app.route("/airports", methods=["POST"])
+def add_airport():
+    if user_data[0] == "":
+        return jsonify({"attenzione": "utente deve essere verificato"}), 401
+    data = request.json
+    icao = data.get("icao")
+    name = data.get("name")
+    city = data.get("city")
+    country = data.get("country")
+    if not icao:
+        return jsonify({"errore": "ID ICAO mancante"}), 404
+    add_pref(user_data[0], icao)
+    try:
+        db = get_conn()
+        cursor = db.cursor()
+        cursor.execute("INSERT INTO aeroporti (icao, name, city, country) VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE icao=icao", (icao, name, city, country))
+        db.commit()
+    except mysql.connector.Error as e:
+        return jsonify({"errore di MySQL airport": str(e)}), 500
+    finally:
+        cursor.close()
+        db.close()
+    return jsonify({"OK": 200, "Aeroporto registrato": icao,})
+
 def get_token(auth):
     url = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
     params = {"grant_type": "client_credentials", "client_id": auth[0], "client_secret": auth[1]}
@@ -158,49 +183,6 @@ def fetch_flights(icao, begin, end, type):
         if resp.status_code == 404:
             return []
     return None
-
-########################
-
-@app.route("/<mail>", methods=["POST"])
-def verify_user(mail):
-    global user_data
-    ref = check_user(mail)
-    if ref['exists'] == False:
-        return jsonify({"errore": "utente non registrato"}), 401
-    if user_data[0] == mail:
-        return jsonify({"errore": "utente già registrato, proseguire"}), 202
-    #if user_data[0] != "" and user_data[0] != mail:
-        #return jsonify({"errore": "utente prima di lei stà usando il sistema"}), 202
-    user_data[0] = mail
-    return jsonify({"OK": 200, "è effettivamente registrato": user_data[0]})
-
-@app.route("/airports", methods=["POST"])
-def add_airport():
-    if user_data[0] == "":
-        return jsonify({"attenzione": "utente deve essere verificato"}), 401
-    data = request.json
-    icao = data.get("icao")
-    name = data.get("name")
-    city = data.get("city")
-    country = data.get("country")
-    low = data.get("low") if not None else 0
-    high = data.get("high") if not None else 0
-    if not icao:
-        return jsonify({"errore": "ID ICAO mancante"}), 404
-    if low != 0 and high != 0 and (low >= high):
-        return jsonify({"errore": "parametri low o high sbagliati"}), 404
-    add_pref(user_data[0], icao, low, high)
-    try:
-        db = get_conn()
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO aeroporti (icao, name, city, country) VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE icao=icao", (icao, name, city, country))
-        db.commit()
-    except mysql.connector.Error as e:
-        return jsonify({"errore di MySQL airport": str(e)}), 500
-    finally:
-        cursor.close()
-        db.close()
-    return jsonify({"OK": 200, "Aeroporto registrato": icao,})
 
 @app.route("/airports/<icao>/<type>", methods=["GET"])
 def add_flight(icao, type):
@@ -267,11 +249,12 @@ scheduler.start()
 if __name__ == "__main__":
     while True:
         try:
-            producer = Producer(producer_config)
-            logging.info("Kafka Producer connesso Data")
+            producer = KafkaProducer(bootstrap_servers="kafka:9092")
+            print("Kafka Producer connesso!")
             break
-        except KafkaException as e:
-            logging.info("Kafka non pronto, retry in 2s...")
+        except errors.NoBrokersAvailable:
+            print("Kafka non pronto, retry in 2s...")
             time.sleep(2)
 
+    logging.info(f"Kafka Producer connesso a kafka:9092, topic={K_TOPIC}")
     app.run(host="0.0.0.0", port=5001)

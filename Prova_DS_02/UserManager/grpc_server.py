@@ -5,24 +5,23 @@ import mysql.connector
 import os
 from proto import auth_pb2, auth_pb2_grpc
 
+def get_conn():
+    return mysql.connector.connect(
+        host=os.getenv("MYSQL_HOST"),
+        user=os.getenv("MYSQL_USER"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        database=os.getenv("MYSQL_DATABASE")
+    )
 
 class AuthServicer(auth_pb2_grpc.AuthServiceServicer):
     def CheckUser(self, request, context):
         email = request.email
-
-        db = mysql.connector.connect(
-            host=os.getenv("MYSQL_HOST"),
-            user=os.getenv("MYSQL_USER"),
-            password=os.getenv("MYSQL_PASSWORD"),
-            database=os.getenv("MYSQL_DATABASE")
-        )
-
+        db = get_conn()
         cursor = db.cursor()
         cursor.execute("SELECT email FROM utenti WHERE email=%s", (email,))
         exists = cursor.fetchone() is not None
         cursor.close()
         db.close()
-
         return auth_pb2.UserResponse(exists=exists)
     
 def serve():

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify
 import mysql.connector
 import os
 
@@ -22,9 +22,8 @@ def register():
     key = request.headers.get("Request-Key")
     data = request.get_json()
     status = 200
-
     if not key:
-        return jsonify({"errore": "Manca la chiave"}), 404    
+        return jsonify({"errore": "Manca la chiave"}), 404
 
     try:
         db = get_connection()
@@ -47,6 +46,7 @@ def register():
             status = 501
         except mysql.connector.Error as e:
             status = 500
+            return jsonify({"STATUS": e})
         cursor.execute("INSERT INTO richiest (request_key, _status) VALUES (%s, %s)", (key, status))
         db.commit()
         return jsonify({"STATUS": status})

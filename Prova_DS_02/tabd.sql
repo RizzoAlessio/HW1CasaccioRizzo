@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS pref (
   id INT AUTO_INCREMENT PRIMARY KEY,
   email VARCHAR(255),
   icao CHAR(4),
+  l INT,
+  h INT,
   FOREIGN KEY (icao) REFERENCES aeroporti(icao),
   UNIQUE (email, icao)
 );
