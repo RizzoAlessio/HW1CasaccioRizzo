@@ -36,8 +36,6 @@ while True:
         email = event["email"]
         airport = event["airport"]
         tipo = event["type"]
-
-        # QUI puoi mandare email, telegram, ecc
         print(f" → NOTIFY: invio alert a {email} per {airport} ({tipo})")
 
     except KafkaException as e:

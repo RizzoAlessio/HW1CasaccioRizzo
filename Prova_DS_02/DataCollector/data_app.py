@@ -219,6 +219,8 @@ def add_flight(icao, type):
         data = fetch_flights(icao, begin, end, "arrival")
     if data is None:
         return jsonify({"errore": "Circuito Aperto"}), 503
+    dep_count = len(data)
+    send_kafka(icao, dep_count)
     for v in data:
         icaoA = v.get("icao24")
         estDep = v.get("estDepartureAirport")
