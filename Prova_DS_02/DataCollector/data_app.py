@@ -39,17 +39,29 @@ def report(err, msg):
 
 def send_kafka(icao, departure_count):
     global producer, user_data
+    low = high = None
     if producer is None:
         logging.error("Producer Kafka non inizializzato per qualche motivo...")
         return
-
+    try:
+        db = get_conn()
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT l, h FROM pref WHERE email=%s AND icao=%s", (user_data[0], icao))
+        pref = cursor.fetchone()
+        db.commit()
+        low = pref.get("l")
+        high = pref.get("h")
+    except mysql.connector.Error as e:
+        return jsonify({"errore di MySQL nel prelevare lh": str(e)}), 500
+    finally:
+        cursor.close()
+        db.close()
     event = {
         "icao": icao,
-        "timestamp": int(time.time()),
         "departure_count": departure_count,
         "user": user_data[0],
-        "low": user_data[1],
-        "high": user_data[2],
+        "low": low,
+        "high": high,
         "collector": "DataCollector"
     }
 
@@ -65,7 +77,6 @@ def send_kafka(icao, departure_count):
         logging.error(f"Errore nel send_kafka {e}")
 
 def add_pref(user, icao, l, h):
-    global user_data
     if user == "" or not icao:
         return jsonify({"errore": "parametri non trovati"}), 404
     try:

@@ -8,7 +8,8 @@ TOPIC_OUT = os.environ["KAFKA_TOPIC_PRODUCE"]
 consumer_conf = {
     "bootstrap.servers": BOOTSTRAP,
     "group.id": "alert-system-group",
-    "auto.offset.reset": "earliest"
+    "auto.offset.reset": "earliest",
+    "enable.auto.commit": False
 }
 
 producer_conf = {
@@ -25,16 +26,16 @@ while True:
         producer = Producer(producer_conf)
         logging.info("Kafka Producer/Consumer connesso Alert")
         break
-    except KafkaException as e:
-        logging.info("Kafka non pronto, retry in 2s...")
+    except KafkaException:
+        logging.info("Kafka in Alert non pronto, retry in 2s...")
         time.sleep(2)
 
 
 def report(err, msg):
     if err is not None:
-        print("Errore nel delivery dell'Alert:", err)
+        logging.info("Errore nel delivery dell'Alert:", err)
     else:
-        print(f"Messaggio alert inviato a {msg.topic()}")
+        logging.info(f"Messaggio alert inviato a {msg.topic()}")
 
 while True:
     try:
@@ -42,13 +43,12 @@ while True:
         if msg is None:
             continue
         if msg.error():
-            print("errore kafka:", msg.error())
+            logging.info("errore kafka alert: ", msg.error())
             continue
 
         event = json.loads(msg.value().decode("utf-8"))
 
         icao = event["icao"]
-        timestamp = event["timestamp"]
         count = event["departure_count"]
         high = event["high"]
         low = event["low"]
@@ -73,6 +73,11 @@ while True:
                 callback=report
             )
             producer.poll(0)
+        consumer.commit(msg)
 
-    except KafkaException as e:
-        print("Errore Kafka:", e)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        logging.info("Chiudo Alert")
+        consumer.close()
+        producer.flush()
