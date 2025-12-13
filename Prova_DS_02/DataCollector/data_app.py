@@ -8,11 +8,12 @@ from breaker import CircuitBreaker, CircuitBreakerOpenException
 from confluent_kafka import Producer, KafkaException
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 user_data = [""]
 circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=60, expected_exception=Exception)
 
 logging.basicConfig(level=logging.INFO)
-K_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+K_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
 K_TOPIC = os.getenv("KAFKA_TOPIC_ALERT_SYSTEM", "to-alert-system")
 
 producer_config = {
@@ -37,7 +38,7 @@ def report(err, msg):
     else:
         logging.info(f"Messaggio consegnato a {msg.topic()}")
 
-def send_kafka(icao, departure_count):
+def send_kafka(icao, count, typ):
     global producer, user_data
     low = high = None
     if producer is None:
@@ -52,19 +53,20 @@ def send_kafka(icao, departure_count):
         low = pref.get("l")
         high = pref.get("h")
     except mysql.connector.Error as e:
-        return jsonify({"errore di MySQL nel prelevare lh": str(e)}), 500
+        logging.error(f"errore di MySQL nel prelevare lh: {str(e)}")
     finally:
         cursor.close()
         db.close()
+    logging.info(f"l e h {low} e {high}")
     event = {
         "icao": icao,
-        "departure_count": departure_count,
+        "count": count,
         "user": user_data[0],
         "low": low,
         "high": high,
-        "collector": "DataCollector"
+        "collector": "DataCollector",
+        "type": typ
     }
-
     try:
         producer.produce(
             K_TOPIC,
@@ -82,11 +84,13 @@ def add_pref(user, icao, l, h):
     try:
         db = get_conn()
         cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT id FROM pref WHERE email=%s AND icao=%s", (user, icao))
+        cursor.execute("SELECT id, l, h FROM pref WHERE email=%s AND icao=%s", (user, icao))
         pref = cursor.fetchone()
         if pref is None:
             cursor.execute("INSERT INTO pref (email, icao, l, h) VALUES (%s, %s, %s, %s)", (user, icao, l, h))
-            db.commit()
+        elif l != 0 and h != 0 and (pref["l"] != l or pref["h"] != h):
+            cursor.execute("UPDATE pref SET l = %s, h = %s WHERE email=%s AND icao=%s", (l, h, user, icao))
+        db.commit()
     except mysql.connector.Error as e:
         return jsonify({"errore di MySQL in pref": str(e)}), 500
     finally:
@@ -105,7 +109,6 @@ def periodic():
         now = int(time.time())
         begin = now - 12*3600
         end = now
-
         for r in rows:
             icao = r["icao"]
             data = fetch_flights(icao, begin, end, "departure")
@@ -119,9 +122,9 @@ def periodic():
                 departureDate = datetime.fromtimestamp(v.get("firstSeen")).date()
                 arrivalDate = datetime.fromtimestamp(v.get("lastSeen")).date()
                 cursor.execute("DELETE FROM voli WHERE estDep = %s AND departureDate = %s", (estDep, departureDate))
-                cursor.execute("INSERT INTO voli (icao24, estDep, estArr, departureDate, arrivalDate) VALUES (%s, %s, %s, %s, %s)",(icaoA, estDep, estArr, departureDate, arrivalDate))
+                cursor.execute("INSERT IGNORE INTO voli (icao24, estDep, estArr, departureDate, arrivalDate) VALUES (%s, %s, %s, %s, %s)",(icaoA, estDep, estArr, departureDate, arrivalDate))
         db.commit()
-        send_kafka(icao, dep_count)
+        send_kafka(icao, dep_count, "periodic departure")
         return {"OK": 200, "aggiornato automaticamente": now}
     except mysql.connector.Error as e:
         return {"errore di MySQL": str(e)}, 500
@@ -154,15 +157,12 @@ def fetch_flights(icao, begin, end, type):
     token = get_token(auth)
     url = f"https://opensky-network.org/api/flights/{type}?airport={icao}&begin={begin}&end={end}"
     headers = {"Authorization": f"Bearer {token}"}
-
     try:
         resp = circuit_breaker.call(requests.get, url, headers=headers, timeout=10)
     except CircuitBreakerOpenException:
         return None     
-
     except requests.exceptions.RequestException as e:
         return None     
-
     else:
         if resp.status_code == 200:
             return resp.json()
@@ -194,13 +194,12 @@ def add_airport():
     name = data.get("name")
     city = data.get("city")
     country = data.get("country")
-    low = data.get("low") if not None else 0
-    high = data.get("high") if not None else 0
+    low = int(data.get("low", 0))
+    high = int(data.get("high", 0))
     if not icao:
         return jsonify({"errore": "ID ICAO mancante"}), 404
     if low != 0 and high != 0 and (low >= high):
-        return jsonify({"errore": "parametri low o high sbagliati"}), 404
-    add_pref(user_data[0], icao, low, high)
+        return jsonify({"errore": "parametri low o high sbagliati"}), 416
     try:
         db = get_conn()
         cursor = db.cursor()
@@ -211,6 +210,7 @@ def add_airport():
     finally:
         cursor.close()
         db.close()
+    add_pref(user_data[0], icao, low, high)
     return jsonify({"OK": 200, "Aeroporto registrato": icao,})
 
 @app.route("/airports/<icao>/<type>", methods=["GET"])
@@ -230,8 +230,6 @@ def add_flight(icao, type):
         data = fetch_flights(icao, begin, end, "arrival")
     if data is None:
         return jsonify({"errore": "Circuito Aperto"}), 503
-    dep_count = len(data)
-    send_kafka(icao, dep_count)
     for v in data:
         icaoA = v.get("icao24")
         estDep = v.get("estDepartureAirport")
@@ -241,19 +239,19 @@ def add_flight(icao, type):
         try:
             db = get_conn()
             cursor = db.cursor()
-            cursor.execute("INSERT INTO voli (icao24, estDep, estArr, departureDate, arrivalDate) VALUES (%s, %s, %s, %s, %s)", (icaoA, estDep, estArr, departureDate, arrivalDate))
+            cursor.execute("INSERT IGNORE INTO voli (icao24, estDep, estArr, departureDate, arrivalDate) VALUES (%s, %s, %s, %s, %s)", (icaoA, estDep, estArr, departureDate, arrivalDate))
             #add_pref(user_data[0], icao)
             n += 1
             db.commit()
-        except mysql.connector.IntegrityError:
-            return jsonify({"errore": "Probabilmente già inserito"}), 409
+        #except mysql.connector.IntegrityError:
+            #return jsonify({"errore": "Probabilmente già inserito"}), 409
         except mysql.connector.Error as e:
             return jsonify({"errore di MySQL": str(e)}), 500
         finally:
             cursor.close()
             db.close()
-            
-    return ({"OK": user_data[0], "abbiamo registrato tot aerei": n})
+    send_kafka(icao, n, type)     
+    return jsonify({"OK": user_data[0], "abbiamo registrato tot aerei": n})
 
 @app.route("/airports/<icao>/7average")
 def avg_flights(icao):
@@ -270,7 +268,6 @@ def avg_flights(icao):
         day = (datetime.now().date() - timedelta(days = i)).isoformat()
         daily.append({"day": day, "conto": cday.get(day, 0)})
     avg = sum(item["conto"] for item in daily) / days
-    
     return jsonify({"icao": icao, "media": avg, "conteggio": daily})
 
 scheduler = BackgroundScheduler()
@@ -278,13 +275,14 @@ scheduler.add_job(periodic, 'interval', hours=12)
 scheduler.start()
 
 if __name__ == "__main__":
+    logging.basicConfig(filename='datacollector.log', level=logging.INFO)
     while True:
         try:
             producer = Producer(producer_config)
             logging.info("Kafka Producer connesso Data")
             break
         except KafkaException as e:
-            logging.info("Kafka non pronto, retry in 2s...")
-            time.sleep(2)
+            logging.info("Kafka non pronto, retry in 5s...")
+            time.sleep(5)
 
     app.run(host="0.0.0.0", port=5001)

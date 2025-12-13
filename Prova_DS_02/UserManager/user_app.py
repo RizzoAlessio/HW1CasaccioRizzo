@@ -14,7 +14,7 @@ def get_connection():
 
 @app.route("/")
 def index():
-    return jsonify({"ciao": "test"}), 200
+    return jsonify({"TESTa": "SE FUNZIONA OK"}), 200
 
 @app.route("/register", methods=["POST"])
 def register():
