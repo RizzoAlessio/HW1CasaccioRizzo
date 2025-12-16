@@ -23,7 +23,7 @@ consumer = None
 
 SMTP_HOST = os.environ.get("SMTP_HOST", "localhost")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 2525))
-FROM_EMAIL = os.environ.get("FROM_EMAIL", "reportvoli@example.com")
+FROM_EMAIL = os.environ.get("FROM_EMAIL", "notifyvoli@example.com")
 
 def send_email(email, subject, body):
     msg = EmailMessage()
@@ -75,3 +75,4 @@ if __name__ == "__main__":
             logging.warning("Kafka non pronto, retry in 2s...")
             time.sleep(2)
     notify()
+
