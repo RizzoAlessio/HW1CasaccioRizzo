@@ -5,11 +5,8 @@ BOOTSTRAP = os.environ["KAFKA_BOOTSTRAP_SERVERS"]
 TOPIC_IN = os.environ["KAFKA_TOPIC_CONSUME"]
 TOPIC_OUT = os.environ["KAFKA_TOPIC_PRODUCE"]
 
-logging.basicConfig(
-    filename="alert.log",
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s"
-)
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 consumer_conf = {
     "bootstrap.servers": BOOTSTRAP,
@@ -89,3 +86,4 @@ if __name__ == "__main__":
             logging.warning("Kafka non pronto, retry in 2s...")
             time.sleep(2)
     alert()
+
