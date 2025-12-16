@@ -168,7 +168,7 @@ services:
       KAFKA_TOPIC_CONSUME: "to-notifier"
       SMTP_HOST: smtp_relay_email
       SMTP_PORT: 25
-      FROM_EMAIL: reportvoli@example.com
+      FROM_EMAIL: notifyvoli@example.com
     networks:
       - app_kafka_network
 
@@ -187,4 +187,5 @@ volumes:
 networks:
   app_network:
   app_data_network:
+
   app_kafka_network:
