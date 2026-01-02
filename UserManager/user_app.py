@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import mysql.connector
+from prometheus_client import start_http_server, Counter, Gauge
 import os
 
 app = Flask(__name__)
@@ -12,44 +13,51 @@ def get_connection():
         database=os.getenv("MYSQL_DATABASE")
     )
 
+REQUEST = Counter('user_manager_rich', 'Richieste tot', ['service', 'node'])
+LATENZA = Gauge('user_db_latenza', 'Latenza del DB', ['service', 'node'])
+NOME_NODO = os.getenv('NOME_NODO', 'unknown')
+NOME_SERV = os.getenv("NOME_SERVIZIO", "user_manager")
+
 @app.route("/")
 def index():
     return jsonify({"TEST": "SE FUNZIONA OK"}), 200
 
 @app.route("/register", methods=["POST"])
 def register():
-
+    REQUEST.labels(service=NOME_SERV, node=NOME_NODO, endpoint="/register").inc()
     key = request.headers.get("Request-Key")
     data = request.get_json()
     status = 200
     if not key:
         return jsonify({"errore": "Manca la chiave"}), 404
-
+    
     try:
-        db = get_connection()
-        cursor = db.cursor()
+        with LATENZA.labels(service=NOME_SERV, node=NOME_NODO).time():
+        
+            db = get_connection()
+            cursor = db.cursor()
 
-        cursor.execute("SELECT _status FROM richiest WHERE request_key = %s", (key,))
-        resp = cursor.fetchone()
-        if resp == 200:
-            return jsonify({"errore", "Rischiesta già processata"})
-        try:
-            if not data or "email" not in data:
-                status = 404
-            else:
-                email = data["email"]
-                nome = data["nome"]
-                cognome = data["cognome"]
-                cf = data["cf"]
-                cursor.execute("INSERT INTO utenti (email, nome, cognome, cf) VALUES (%s, %s, %s, %s)", (email, nome, cognome, cf))
-        except mysql.connector.IntegrityError:
-            status = 501
-        except mysql.connector.Error as e:
-            status = 500
-            return jsonify({"STATUS": e})
-        cursor.execute("INSERT INTO richiest (request_key, _status) VALUES (%s, %s)", (key, status))
-        db.commit()
-        return jsonify({"STATUS": status})
+            cursor.execute("SELECT _status FROM richiest WHERE request_key = %s", (key,))
+            resp = cursor.fetchone()
+            if resp == 200:
+                return jsonify({"errore", "Rischiesta già processata"})
+            try:
+                if not data or "email" not in data:
+                    status = 404
+                else:
+                    email = data["email"]
+                    nome = data["nome"]
+                    cognome = data["cognome"]
+                    cf = data["cf"]
+                    cursor.execute("INSERT INTO utenti (email, nome, cognome, cf) VALUES (%s, %s, %s, %s)", (email, nome, cognome, cf))
+            except mysql.connector.IntegrityError:
+                status = 501
+            except mysql.connector.Error as e:
+                status = 500
+                return jsonify({"STATUS": e})
+            cursor.execute("INSERT INTO richiest (request_key, _status) VALUES (%s, %s)", (key, status))
+            db.commit()
+            return jsonify({"STATUS": status})
     except mysql.connector.Error as e:
         return jsonify({"è successo un errore": str(e)})
     finally:
@@ -67,7 +75,6 @@ def delete_user():
         db = get_connection()
         cursor = db.cursor()
         cursor.execute("DELETE FROM utenti WHERE email = %s", (email,))
-        #cursor.execute("DELETE FROM datadatabase.pref WHERE email = %s", (email,))
         db.commit()
     except mysql.connector.Error as e:
         return jsonify({"errore di MySQUL": str(e)}), 500
@@ -77,4 +84,5 @@ def delete_user():
     return jsonify({"ok": "Utente e sue occorrenze eliminate"}), 200
 
 if __name__ == "__main__":
+    start_http_server(8000)
     app.run(host="0.0.0.0", port=5000)

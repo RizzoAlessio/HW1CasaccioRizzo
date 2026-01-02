@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-manager
+  template:
+    metadata:
+      labels:
+        app: user-manager
+    spec:
+      containers:
+        - name: user-manager
+          image: usermanager:latest
+          ports:
+            - containerPort: 5000
+            - containerPort: 8000
+          env:
+            - name: NOME_SERVIZIO
+              value: "user_manager"
+            - name: NOME_NODO
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-manager
+spec:
+  selector:
+    app: user-manager
+  ports:
+    - name: http
+      port: 5000
+    - name: metrics
+      port: 8000

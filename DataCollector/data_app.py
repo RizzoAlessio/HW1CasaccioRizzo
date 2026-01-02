@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from grpc_client import check_user
 from breaker import CircuitBreaker, CircuitBreakerOpenException
 from confluent_kafka import Producer, KafkaException
+from prometheus_client import start_http_server, Counter, Gauge
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -15,6 +16,11 @@ circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=60, expec
 logging.basicConfig(level=logging.INFO)
 K_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
 K_TOPIC = os.getenv("KAFKA_TOPIC_ALERT_SYSTEM", "to-alert-system")
+
+K_COUNTER = Counter('data_collector_msg_kafka', 'Messaggi Kafka inviati', ['service', 'node', 'topic'])
+FLY_TIME = Gauge('data_collector_fetch_time', 'Tempo per aspettare OpenSky', ['service', 'node'])
+NOME_NODO = os.getenv('NOME_NODO', 'unknown')
+NOME_SERV = os.getenv("NOME_SERVIZIO", "data_collector")
 
 producer_config = {
         'bootstrap.servers': K_SERVERS,
@@ -75,6 +81,7 @@ def send_kafka(icao, count, typ):
         )
         producer.poll(0)
         producer.flush()
+        K_COUNTER.labels(service=NOME_SERV, node=NOME_NODO, topic=K_TOPIC).inc()
     except Exception as e:
         logging.error(f"Errore nel send_kafka {e}")
 
@@ -157,17 +164,18 @@ def fetch_flights(icao, begin, end, type):
     token = get_token(auth)
     url = f"https://opensky-network.org/api/flights/{type}?airport={icao}&begin={begin}&end={end}"
     headers = {"Authorization": f"Bearer {token}"}
-    try:
-        resp = circuit_breaker.call(requests.get, url, headers=headers, timeout=10)
-    except CircuitBreakerOpenException:
-        return None     
-    except requests.exceptions.RequestException as e:
-        return None     
-    else:
-        if resp.status_code == 200:
-            return resp.json()
-        if resp.status_code == 404:
-            return []
+    with FLY_TIME.labels(service=NOME_SERV, node=NOME_NODO).time():
+        try:
+            resp = circuit_breaker.call(requests.get, url, headers=headers, timeout=10)
+        except CircuitBreakerOpenException:
+            return None     
+        except requests.exceptions.RequestException as e:
+            return None     
+        else:
+            if resp.status_code == 200:
+                return resp.json()
+            if resp.status_code == 404:
+                return []
     return None
 
 ########################
@@ -180,7 +188,6 @@ def verify_user(mail):
         return jsonify({"errore": "utente non registrato"}), 401
     if user_data[0] == mail:
         return jsonify({"errore": "utente già registrato, proseguire"}), 202
-    #if user_data[0] != "" and user_data[0] != mail:
         #return jsonify({"errore": "utente prima di lei stà usando il sistema"}), 202
     user_data[0] = mail
     return jsonify({"OK": 200, "è effettivamente registrato": user_data[0]})
@@ -281,5 +288,5 @@ if __name__ == "__main__":
         except KafkaException:
             logging.info("Kafka non pronto, retry in 5s...")
             time.sleep(5)
-
+    start_http_server(8001)
     app.run(host="0.0.0.0", port=5001)
