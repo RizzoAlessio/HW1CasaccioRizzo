@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data-db-init-sql
+data:
+  tabd.sql: |
+    CREATE DATABASE IF NOT EXISTS datadatabase;
+    USE datadatabase;
+
+    CREATE TABLE IF NOT EXISTS aeroporti (
+      icao CHAR(4) PRIMARY KEY NOT NULL,                 
+      name VARCHAR(255),
+      city VARCHAR(255),
+      country VARCHAR(255)
+    );
+
+    CREATE TABLE IF NOT EXISTS voli (
+      icao24 VARCHAR(12) PRIMARY KEY,
+      estDep CHAR(4),
+      estArr CHAR(4),
+      departureDate DATE,
+      arrivalDate DATE
+    );
+
+    CREATE TABLE IF NOT EXISTS pref (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      email VARCHAR(255),
+      icao CHAR(4),
+      l INT,
+      h INT,
+      UNIQUE (email, icao)
+    );
+---
+apiVersion: v1
+kind: persistentVolumeClaim
+metadata:
+  name: data-db-pv
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-db
+spec:
+  selector:
+    matchLabels:
+      app: data-db
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: data-db
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "rootpass"
+        - name: MYSQL_USER
+          value: "user"
+        - name: MYSQL_PASSWORD
+          value: "pass"
+        - name: MYSQL_DATABASE
+          value: "datadatabase"
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        - name: init-sql
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: mysql-data
+        persistentVolumeClaim:
+          claimName: data-db-pvc
+      - name: init-sql
+        configMap:
+          name: data-db-init-sql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-db
+spec:
+  selector:
+    app: data-db
+  ports:
+    - port: 3306
+      targetPort: 3306

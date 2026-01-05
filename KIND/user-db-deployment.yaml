@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-db-init-sql
+data:
+  tabu.sql: |
+    CREATE DATABASE IF NOT EXISTS userdatabase;
+    USE userdatabase;
+
+    CREATE TABLE IF NOT EXISTS utenti (
+      email VARCHAR(255) PRIMARY KEY,
+      nome VARCHAR(255),
+      cognome VARCHAR(255),
+      cf VARCHAR(255)
+    );
+
+    CREATE TABLE IF NOT EXISTS richiest (
+      request_key VARCHAR(255) PRIMARY KEY,
+      _status INT NOT NULL,  
+      _timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+---
+apiVersion: v1
+kind: persistentVolumeClaim
+metadata:
+  name: user-db-pv
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-db
+spec:
+  selector:
+    matchLabels:
+      app: user-db
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: user-db
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "rootpass"
+        - name: MYSQL_USER
+          value: "user"
+        - name: MYSQL_PASSWORD
+          value: "password"
+        - name: MYSQL_DATABASE
+          value: "userdatabase"
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        - name: init-sql
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: mysql-data
+        persistentVolumeClaim:
+          claimName: user-db-pvc
+      - name: init-sql
+        configMap:
+          name: user-db-init-sql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-db
+spec:
+  selector:
+    app: user-db
+  ports:
+    - port: 3306
+      targetPort: 3306
