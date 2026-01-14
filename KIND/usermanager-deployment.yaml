@@ -19,6 +19,14 @@ spec:
             - containerPort: 5000
             - containerPort: 8000
           env:
+            - name: MYSQL_HOST
+              value: "user-db"
+            - name: MYSQL_USER
+              value: "user"
+            - name: MYSQL_PASSWORD
+              value: "password"
+            - name: MYSQL_DATABASE
+              value: "userdatabase"
             - name: NOME_SERVIZIO
               value: "user_manager"
             - name: NOME_NODO

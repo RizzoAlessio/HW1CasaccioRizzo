@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smtp-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smtp-relay
+  template:
+    metadata:
+      labels:
+        app: smtp-relay
+    spec:
+      containers:
+        - name: smtp-relay
+          image: namshi/smtp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: smtp-relay-service
+spec:
+  selector:
+    app: smtp-relay
+  ports:
+    - port: 25
+      targetPort: 25

@@ -187,5 +187,4 @@ volumes:
 networks:
   app_network:
   app_data_network:
-
   app_kafka_network:

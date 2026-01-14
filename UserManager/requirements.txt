@@ -2,3 +2,4 @@ Flask
 mysql-connector-python
 grpcio
 grpcio-tools
+prometheus-client

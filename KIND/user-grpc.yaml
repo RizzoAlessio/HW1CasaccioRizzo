@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-grpc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-grpc
+  template:
+    metadata:
+      labels:
+        app: user-grpc
+    spec:
+      containers:
+      - name: user-grpc
+        image: usermanager:latest
+        command: ["python", "grpc_server.py"]
+        ports:
+        - containerPort: 50051
+        env:
+        - name: MYSQL_HOST
+          value: "user-db"
+        - name: MYSQL_USER
+          value: "user"
+        - name: MYSQL_PASSWORD
+          value: "password"
+        - name: MYSQL_DATABASE
+          value: "userdatabase"
+        - name: NOME_SERVIZIO
+          value: "user_grpc"
+        - name: NOME_NODO
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-grpc-service
+spec:
+  selector:
+    app: user-grpc
+  ports:
+    - protocol: TCP
+      port: 50051
+      targetPort: 50051

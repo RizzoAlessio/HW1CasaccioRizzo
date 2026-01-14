@@ -21,9 +21,9 @@ data:
     );
 ---
 apiVersion: v1
-kind: persistentVolumeClaim
+kind: PersistentVolumeClaim
 metadata:
-  name: user-db-pv
+  name: user-db-pvc
 spec:
   accessModes:
     - ReadWriteOnce
@@ -52,6 +52,8 @@ spec:
         env:
         - name: MYSQL_ROOT_PASSWORD
           value: "rootpass"
+        - name: MYSQL_HOST
+          value: "user_db"
         - name: MYSQL_USER
           value: "user"
         - name: MYSQL_PASSWORD

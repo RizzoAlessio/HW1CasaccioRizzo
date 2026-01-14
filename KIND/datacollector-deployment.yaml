@@ -19,6 +19,18 @@ spec:
             - containerPort: 5001
             - containerPort: 8001
           env:
+            - name: DB_HOST
+              value: "data-db" 
+            - name: DB_USER
+              value: "user"
+            - name: DB_PASS
+              value: "pass"
+            - name: DB_NAME
+              value: "datadatabase"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-service:9092"
+            - name: KAFKA_TOPIC_ALERT_SYSTEM
+              value: "to-alert-system"
             - name: NOME_SERVIZIO
               value: "data_collector"
             - name: NOME_NODO

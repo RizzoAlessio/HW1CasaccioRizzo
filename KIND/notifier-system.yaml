@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifier-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notifier-system
+  template:
+    metadata:
+      labels:
+        app: notifier-system
+    spec:
+      containers:
+        - name: notifier-system
+          image: notifier-system:latest
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-service:9092"
+            - name: KAFKA_TOPIC_CONSUME
+              value: "to-notifier"
+            - name: SMTP_HOST
+              value: "smtp-relay-service"
+            - name: SMTP_PORT
+              value: "25"
+            - name: FROM_EMAIL
+              value: "notifyvoli@example.com"

@@ -5,3 +5,4 @@ apscheduler
 grpcio
 grpcio-tools
 confluent-kafka
+prometheus-client

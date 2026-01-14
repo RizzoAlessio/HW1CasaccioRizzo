@@ -13,14 +13,14 @@ def get_connection():
         database=os.getenv("MYSQL_DATABASE")
     )
 
-REQUEST = Counter('user_manager_rich', 'Richieste tot', ['service', 'node'])
+REQUEST = Counter('user_manager_rich', 'Richieste tot', ['service', 'node', 'endpoint'])
 LATENZA = Gauge('user_db_latenza', 'Latenza del DB', ['service', 'node'])
 NOME_NODO = os.getenv('NOME_NODO', 'unknown')
 NOME_SERV = os.getenv("NOME_SERVIZIO", "user_manager")
 
 @app.route("/")
 def index():
-    return jsonify({"TEST": "SE FUNZIONA OK"}), 200
+    return jsonify({"TEST": "SE FUNZIONA è OK"}), 200
 
 @app.route("/register", methods=["POST"])
 def register():
@@ -28,6 +28,8 @@ def register():
     key = request.headers.get("Request-Key")
     data = request.get_json()
     status = 200
+    db = None
+    cursor = None
     if not key:
         return jsonify({"errore": "Manca la chiave"}), 404
     
@@ -40,29 +42,23 @@ def register():
             cursor.execute("SELECT _status FROM richiest WHERE request_key = %s", (key,))
             resp = cursor.fetchone()
             if resp == 200:
-                return jsonify({"errore", "Rischiesta già processata"})
-            try:
-                if not data or "email" not in data:
-                    status = 404
-                else:
-                    email = data["email"]
-                    nome = data["nome"]
-                    cognome = data["cognome"]
-                    cf = data["cf"]
-                    cursor.execute("INSERT INTO utenti (email, nome, cognome, cf) VALUES (%s, %s, %s, %s)", (email, nome, cognome, cf))
-            except mysql.connector.IntegrityError:
-                status = 501
-            except mysql.connector.Error as e:
-                status = 500
-                return jsonify({"STATUS": e})
+                return jsonify({"errore": "Rischiesta già processata"})
+            if not data or "email" not in data:
+                status = 404
+            else:
+                email = data["email"]
+                nome = data["nome"]
+                cognome = data["cognome"]
+                cf = data["cf"]
+                cursor.execute("INSERT INTO utenti (email, nome, cognome, cf) VALUES (%s, %s, %s, %s)", (email, nome, cognome, cf))
             cursor.execute("INSERT INTO richiest (request_key, _status) VALUES (%s, %s)", (key, status))
             db.commit()
             return jsonify({"STATUS": status})
     except mysql.connector.Error as e:
         return jsonify({"è successo un errore": str(e)})
     finally:
-        cursor.close()
-        db.close()
+        if cursor is not None: cursor.close()
+        if db is not None: db.close()
         
 
 @app.route("/delete", methods=["DELETE"])
@@ -79,8 +75,8 @@ def delete_user():
     except mysql.connector.Error as e:
         return jsonify({"errore di MySQUL": str(e)}), 500
     finally:
-        cursor.close()
-        db.close()
+        if cursor is not None: cursor.close()
+        if db is not None: db.close()
     return jsonify({"ok": "Utente e sue occorrenze eliminate"}), 200
 
 if __name__ == "__main__":

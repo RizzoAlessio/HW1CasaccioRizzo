@@ -32,9 +32,9 @@ data:
     );
 ---
 apiVersion: v1
-kind: persistentVolumeClaim
+kind: PersistentVolumeClaim
 metadata:
-  name: data-db-pv
+  name: data-db-pvc
 spec:
   accessModes:
     - ReadWriteOnce
