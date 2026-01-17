@@ -15,6 +15,7 @@ spec:
       containers:
         - name: alert-system
           image: alertsystem:latest
+          imagePullPolicy: Never
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "kafka-service:9092"

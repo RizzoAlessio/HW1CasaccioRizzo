@@ -15,6 +15,7 @@ spec:
       containers:
       - name: user-grpc
         image: usermanager:latest
+        imagePullPolicy: Never
         command: ["python", "grpc_server.py"]
         ports:
         - containerPort: 50051

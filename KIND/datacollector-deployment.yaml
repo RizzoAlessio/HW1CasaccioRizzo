@@ -15,6 +15,7 @@ spec:
       containers:
         - name: data-collector
           image: datacollector:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 5001
             - containerPort: 8001

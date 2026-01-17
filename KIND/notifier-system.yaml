@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
         - name: notifier-system
-          image: notifier-system:latest
+          image: notifiersystem:latest
+          imagePullPolicy: Never
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "kafka-service:9092"

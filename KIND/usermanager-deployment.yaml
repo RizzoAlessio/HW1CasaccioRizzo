@@ -15,6 +15,7 @@ spec:
       containers:
         - name: user-manager
           image: usermanager:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 5000
             - containerPort: 8000
