@@ -1,0 +1,14 @@
+kind create cluster
+docker build -t usermanager:latest ./UserManager
+kind load docker-image usermanager:latest
+docker build -t datacollector:latest ./DataCollector
+kind load docker-image datacollector:latest
+docker build -t alertsystem:latest ./Alert
+kind load docker-image alertsystem:latest
+docker build -t notifiersystem:latest ./Notify
+kind load docker-image notifiersystem:latest
+kubectl apply -f ./KIND
+kubectl get pods
+clear
+kubectl port-forward deployment/api-gateway 8080:80
+kubectl port-forward svc/prometheus 9090:9090

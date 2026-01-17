@@ -1,1 +1,0 @@
-fatta per poi
